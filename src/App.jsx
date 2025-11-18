@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, addDoc, onSnapshot, query, orderBy } from "firebase/firestore";
 
-// --- 1. DATOS DE REGIONES Y COMUNAS (Integrado) ---
+// --- 1. DATOS DE REGIONES Y COMUNAS ---
 const regionesYComunas = {
   "Arica y Parinacota": ["Arica", "Camarones", "Putre", "General Lagos"],
   "Tarapacá": ["Iquique", "Alto Hospicio", "Pozo Almonte", "Camiña", "Colchane", "Huara", "Pica"],
@@ -22,7 +22,7 @@ const regionesYComunas = {
   "Magallanes y de la Antártica Chilena": ["Punta Arenas", "Laguna Blanca", "Río Verde", "San Gregorio", "Cabo de Hornos (Ex Navarino)", "Antártica", "Porvenir", "Primavera", "Timaukel", "Natales", "Torres del Paine"]
 };
 
-// --- 2. CONFIGURACIÓN FIREBASE (Integrado) ---
+// --- 2. CONFIGURACIÓN FIREBASE ---
 const firebaseConfig = {
   apiKey: "AIzaSyAAFQTs3e1fMUKeNFLRRJmYUruiWBUpfB4",
   authDomain: "registro-chile.firebaseapp.com",
@@ -32,7 +32,6 @@ const firebaseConfig = {
   appId: "1:878816207410:web:0a9d2fbdcb53e4c4aa922b"
 };
 
-// Inicializar Firebase si no existe ya una instancia
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
@@ -50,7 +49,6 @@ function App() {
     comuna: ''
   });
 
-  // Conexión a Firebase en tiempo real
   useEffect(() => {
     const q = query(collection(db, "registros"), orderBy("fechaSistema", "desc"));
 
@@ -117,9 +115,10 @@ function App() {
         
         <header className="mb-8 text-center md:text-left border-b border-slate-200 pb-6">
           <h1 className="text-3xl font-extrabold text-slate-800">Registro Nacional</h1>
-          <p className="text-slate-500 mt-2">Base de Datos Centralizada - Chile</p>
+          <p className="text-slate-500 mt-2">Cuadratura de Votos - Chile</p>
         </header>
 
+        {/* --- AVISO ACTUALIZADO --- */}
         <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-8 rounded-r shadow-sm">
           <div className="flex">
              <div className="flex-shrink-0">
@@ -128,11 +127,11 @@ function App() {
                </svg>
              </div>
              <div className="ml-3">
-               <h3 className="text-sm font-medium text-yellow-800">Aviso de Confidencialidad</h3>
+               <h3 className="text-sm font-medium text-yellow-800">Aviso Importante</h3>
                <div className="mt-1 text-sm text-yellow-700">
                  <p>
-                   Esta información se guarda en una base de datos en la nube de forma permanente. 
-                   No se pueden eliminar ni editar registros una vez ingresados.
+                   Los datos inscritos son netamente para cuadrar los votos reales con los estipulados del Servel. 
+                   No se tendrán en cuenta RUTs inexistentes.
                  </p>
                </div>
              </div>
@@ -208,7 +207,7 @@ function App() {
                 className={`font-bold py-3 px-8 rounded-lg shadow-lg transition-all flex items-center gap-2 text-white
                   ${enviando ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-xl'}`}
               >
-                {enviando ? 'Guardando en la nube...' : 'Subir Registro'}
+                {enviando ? 'Guardando...' : 'Subir Registro'}
               </button>
             </div>
           </form>
@@ -237,7 +236,7 @@ function App() {
                   {registros.length === 0 ? (
                     <tr>
                       <td colSpan="6" className="px-6 py-12 text-center text-slate-400 italic">
-                        No hay registros en la nube aún. ¡Sé el primero en agregar uno!
+                        No hay registros cargados.
                       </td>
                     </tr>
                   ) : (
