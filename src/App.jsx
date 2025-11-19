@@ -22,7 +22,7 @@ const regionesYComunas = {
   "Magallanes y de la Antártica Chilena": ["Punta Arenas", "Laguna Blanca", "Río Verde", "San Gregorio", "Cabo de Hornos (Ex Navarino)", "Antártica", "Porvenir", "Primavera", "Timaukel", "Natales", "Torres del Paine"]
 };
 
-// --- 2. CONFIGURACIÓN FIREBASE ---
+// --- 2. CONFIGURACIÓN FIREBASE (Tus credenciales) ---
 const firebaseConfig = {
   apiKey: "AIzaSyAAFQTs3e1fMUKeNFLRRJmYUruiWBUpfB4",
   authDomain: "registro-chile.firebaseapp.com",
@@ -35,11 +35,59 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// --- 3. COMPONENTE PRINCIPAL ---
+// --- 3. FUNCIONES DE UTILIDAD (Fuera del componente) ---
+
+// Función para validar el Dígito Verificador del RUT (Check matemático)
+const validarRut = (rut) => {
+    if (!rut) return false;
+    rut = rut.replace(/[^0-9kK]/g, '').toUpperCase();
+    if (rut.length < 8) return false;
+
+    let total = 0;
+    let factor = 2;
+    const cuerpo = rut.slice(0, -1);
+    const dv = rut.slice(-1);
+
+    for (let i = cuerpo.length - 1; i >= 0; i--) {
+        total += cuerpo[i] * factor;
+        factor = factor === 7 ? 2 : factor + 1;
+    }
+
+    const dvEsperado = 11 - (total % 11);
+    let dvCalculado;
+
+    if (dvEsperado === 11) {
+        dvCalculado = '0';
+    } else if (dvEsperado === 10) {
+        dvCalculado = 'K';
+    } else {
+        dvCalculado = String(dvEsperado);
+    }
+
+    return dv === dvCalculado;
+};
+
+// Función para dar formato al RUT (XX.XXX.XXX-X)
+const formatearRut = (rut) => {
+    if (!rut) return '';
+    rut = rut.replace(/[^0-9kK]/g, '').toUpperCase();
+    if (rut.length === 0) return '';
+    
+    let cuerpo = rut.slice(0, -1);
+    const dv = rut.slice(-1);
+    
+    cuerpo = cuerpo.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    
+    return `${cuerpo}-${dv}`;
+};
+
+
+// --- 4. COMPONENTE PRINCIPAL ---
 function App() {
   const [registros, setRegistros] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [enviando, setEnviando] = useState(false);
+  const [rutInvalido, setRutInvalido] = useState(null); // null, 'math', 'duplicate', 'apify'
 
   const [form, setForm] = useState({
     nombre: '',
@@ -49,6 +97,7 @@ function App() {
     comuna: ''
   });
 
+  // Conexión a Firebase en tiempo real
   useEffect(() => {
     const q = query(collection(db, "registros"), orderBy("fechaSistema", "desc"));
 
@@ -69,45 +118,104 @@ function App() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    if (name === 'region') {
+    
+    if (name === 'rut') {
+      const rutLimpio = value.replace(/[^0-9kK]/g, '');
+      const rutFormateado = formatearRut(rutLimpio);
+      setForm({ ...form, rut: rutFormateado });
+      setRutInvalido(null);
+    } else if (name === 'region') {
       setForm({ ...form, region: value, comuna: '' });
     } else {
       setForm({ ...form, [name]: value });
     }
   };
 
+  const limpiarFormulario = () => {
+    setForm({ nombre: '', apellido: '', rut: '', region: '', comuna: '' });
+  };
+
   const handleAgregar = async (e) => {
     e.preventDefault();
     
     if (!form.nombre || !form.apellido || !form.rut || !form.region || !form.comuna) {
-      alert("Por favor completa todos los campos");
+      alert("Por favor completa todos los campos.");
       return;
     }
 
+    setEnviando(true);
+    const rutLimpio = form.rut.replace(/[^0-9kK]/g, '').toUpperCase();
+
+    // 1. Validación de Dígito Verificador
+    if (!validarRut(form.rut)) {
+      setRutInvalido('math');
+      alert("ERROR: El RUT es matemáticamente INCORRECTO. No será ingresado.");
+      limpiarFormulario();
+      setEnviando(false);
+      return;
+    }
+    
+    // 2. Validación de Unicidad
+    const rutExistente = registros.some(r => r.rut.replace(/[^0-9kK]/g, '').toUpperCase() === rutLimpio);
+
+    if (rutExistente) {
+      setRutInvalido('duplicate');
+      alert(`ERROR: El RUT ${form.rut} ya se encuentra registrado. Solo se permite un registro por RUT.`);
+      limpiarFormulario();
+      setEnviando(false);
+      return;
+    }
+
+    // 3. Validación de Existencia Real (a través del Backend Proxy)
     try {
-      setEnviando(true);
+      const proxyResponse = await fetch('/api/rutificar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rutLimpio }), // Enviamos solo el RUT limpio al proxy
+      });
+
+      const data = await proxyResponse.json();
+
+      if (!data.valido) {
+        // Falló Apify o no encontró a la persona.
+        setRutInvalido('apify');
+        alert(`ADVERTENCIA: ${data.mensaje}. El registro será RECHAZADO, ya que el RUT no está asociado a una persona en el registro público.`);
+        limpiarFormulario();
+        setEnviando(false);
+        return;
+      }
       
+      // 4. Si es válido en todas las etapas, guardar en Firebase
+      setRutInvalido(null);
       await addDoc(collection(db, "registros"), {
         ...form,
         fechaVisible: new Date().toLocaleDateString('es-CL'),
         fechaSistema: Date.now()
       });
 
-      setForm({
-        nombre: '',
-        apellido: '',
-        rut: '',
-        region: '',
-        comuna: ''
-      });
+      limpiarFormulario();
 
     } catch (error) {
-      console.error("Error al guardar: ", error);
-      alert("Error al conectar con la nube. Revisa tu conexión.");
+      console.error("Error en la conexión al proxy de Apify:", error);
+      alert("Error crítico al validar el RUT (Problema de conexión al Servidor Serverless).");
     } finally {
       setEnviando(false);
     }
   };
+
+  const getErrorText = () => {
+    switch (rutInvalido) {
+      case 'math':
+        return 'ERROR: Dígito Verificador incorrecto. RUT matemáticamente imposible.';
+      case 'duplicate':
+        return 'ERROR: Este RUT ya está registrado en la base de datos.';
+      case 'apify':
+        return 'ERROR: RUT válido, pero Apify no encontró a la persona en el registro público.';
+      default:
+        return 'RUT Inválido.';
+    }
+  };
+
 
   return (
     <div className="min-h-screen bg-slate-50 py-8 px-4 font-sans">
@@ -118,7 +226,6 @@ function App() {
           <p className="text-slate-500 mt-2">Cuadratura de Votos - Chile</p>
         </header>
 
-        {/* --- AVISO ACTUALIZADO --- */}
         <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-8 rounded-r shadow-sm">
           <div className="flex">
              <div className="flex-shrink-0">
@@ -127,77 +234,62 @@ function App() {
                </svg>
              </div>
              <div className="ml-3">
-               <h3 className="text-sm font-medium text-yellow-800">Aviso Importante</h3>
+               <h3 className="text-sm font-medium text-yellow-800">Aviso Importante (Máxima Seguridad)</h3>
                <div className="mt-1 text-sm text-yellow-700">
                  <p>
-                   Los datos inscritos son netamente para cuadrar los votos reales con los estipulados del Servel. 
-                   No se tendrán en cuenta RUTs inexistentes.
+                   El sistema aplica 3 niveles de seguridad: 1) Validez Matemática (DV). 2) Antiduplicidad. 3) **Validación Externa (Apify) para confirmar existencia en registros públicos.**
                  </p>
                </div>
              </div>
           </div>
         </div>
 
+        {/* --- FORMULARIO DE INGRESO --- */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-10">
           <h2 className="text-sm font-bold text-indigo-600 uppercase tracking-wider mb-4">Nuevo Ingreso</h2>
           <form onSubmit={handleAgregar} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-5">
             
             <div className="lg:col-span-2">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Región</label>
-              <select 
-                name="region" 
-                value={form.region} 
-                onChange={handleChange}
-                className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-sm text-slate-700"
-              >
+              <select name="region" value={form.region} onChange={handleChange} className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-sm text-slate-700">
                 <option value="">Seleccionar...</option>
-                {Object.keys(regionesYComunas).map(reg => (
-                  <option key={reg} value={reg}>{reg}</option>
-                ))}
+                {Object.keys(regionesYComunas).map(reg => (<option key={reg} value={reg}>{reg}</option>))}
               </select>
             </div>
 
             <div className="lg:col-span-2">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Comuna</label>
-              <select 
-                name="comuna" 
-                value={form.comuna} 
-                onChange={handleChange}
-                disabled={!form.region}
-                className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-sm text-slate-700 disabled:bg-slate-100"
-              >
+              <select name="comuna" value={form.comuna} onChange={handleChange} disabled={!form.region} className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-sm text-slate-700 disabled:bg-slate-100">
                 <option value="">Seleccionar...</option>
-                {form.region && regionesYComunas[form.region].map(com => (
-                  <option key={com} value={com}>{com}</option>
-                ))}
+                {form.region && regionesYComunas[form.region].map(com => (<option key={com} value={com}>{com}</option>))}
               </select>
             </div>
 
             <div className="lg:col-span-2">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-2">RUT</label>
               <input 
-                type="text" name="rut" value={form.rut} onChange={handleChange}
-                className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm text-slate-700"
+                type="text" 
+                name="rut" 
+                value={form.rut} 
+                onChange={handleChange}
+                className={`w-full p-2.5 border rounded-lg focus:ring-2 outline-none text-sm text-slate-700
+                  ${rutInvalido !== null ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-indigo-500'}`}
                 placeholder="12.345.678-9"
+                maxLength={12} 
               />
+               {rutInvalido !== null && (
+                <p className="text-red-500 text-xs mt-1 font-semibold">{getErrorText()}</p>
+              )}
             </div>
 
             <div className="lg:col-span-3">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Nombres</label>
-              <input 
-                type="text" name="nombre" value={form.nombre} onChange={handleChange}
-                className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm text-slate-700"
-                placeholder="Ingresa los nombres"
-              />
+              <input type="text" name="nombre" value={form.nombre} onChange={handleChange} className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm text-slate-700" placeholder="Ingresa los nombres" />
             </div>
 
             <div className="lg:col-span-3">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Apellidos</label>
-              <input 
-                type="text" name="apellido" value={form.apellido} onChange={handleChange}
-                className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm text-slate-700"
-                placeholder="Ingresa los apellidos"
-              />
+              <input type="text" name="apellido" value={form.apellido} onChange={handleChange} className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm text-slate-700" placeholder="Ingresa los apellidos" />
             </div>
 
             <div className="lg:col-span-6 mt-2 flex justify-end">
@@ -207,13 +299,19 @@ function App() {
                 className={`font-bold py-3 px-8 rounded-lg shadow-lg transition-all flex items-center gap-2 text-white
                   ${enviando ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-xl'}`}
               >
-                {enviando ? 'Guardando...' : 'Subir Registro'}
+                {enviando ? 'Validando RUT...' : 'Subir Registro'}
               </button>
             </div>
           </form>
         </div>
 
+        {/* --- TABLA DE DATOS (LISTADO) --- */}
         <div className="bg-white rounded-lg shadow-md border border-slate-300 overflow-hidden">
+          <div className="p-4 bg-slate-100 border-b border-slate-300 text-sm font-bold text-slate-700 flex justify-between items-center">
+            <span>Listado de Registros Válidos (Solo Lectura)</span>
+            <span>Total: <span className="text-indigo-600 text-lg">{registros.length}</span></span>
+          </div>
+
           {cargando ? (
             <div className="p-12 text-center">
               <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-500 border-t-transparent"></div>
@@ -222,7 +320,7 @@ function App() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left text-slate-600">
-                <thead className="text-xs text-slate-700 uppercase bg-slate-100 border-b border-slate-300">
+                <thead className="text-xs text-slate-700 uppercase bg-slate-200 border-b border-slate-300">
                   <tr>
                     <th className="px-6 py-4 font-extrabold border-r border-slate-300">Fecha</th>
                     <th className="px-6 py-4 font-extrabold border-r border-slate-300">RUT</th>
