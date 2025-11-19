@@ -135,6 +135,19 @@ function App() {
     setForm({ nombre: '', apellido: '', rut: '', region: '', comuna: '' });
   };
 
+  const getErrorText = () => {
+    switch (rutInvalido) {
+      case 'math':
+        return 'ERROR: Dígito Verificador incorrecto. Verifique el número.';
+      case 'duplicate':
+        return 'ERROR: Este RUT ya existe. Solo se permite un registro por RUT.';
+      case 'apify':
+        return 'ADVERTENCIA: RUT no asociado a una persona en el registro público.';
+      default:
+        return 'RUT Inválido.';
+    }
+  };
+
   const handleAgregar = async (e) => {
     e.preventDefault();
     
@@ -149,13 +162,13 @@ function App() {
     // 1. Validación de Dígito Verificador
     if (!validarRut(form.rut)) {
       setRutInvalido('math');
-      alert("ERROR: El RUT es matemáticamente INCORRECTO. No será ingresado.");
+      alert("ERROR: El RUT es matemáticamente INCORRECTO y ha sido rechazado.");
       limpiarFormulario();
       setEnviando(false);
       return;
     }
     
-    // 2. Validación de Unicidad
+    // 2. Validación de Unicidad (Anti-Duplicidad)
     const rutExistente = registros.some(r => r.rut.replace(/[^0-9kK]/g, '').toUpperCase() === rutLimpio);
 
     if (rutExistente) {
@@ -179,7 +192,7 @@ function App() {
       if (!data.valido) {
         // Falló Apify o no encontró a la persona.
         setRutInvalido('apify');
-        alert(`ADVERTENCIA: ${data.mensaje}. El registro será RECHAZADO, ya que el RUT no está asociado a una persona en el registro público.`);
+        alert(`REGISTRO RECHAZADO: El RUT es válido, pero no se encontró en el registro público (${data.mensaje}).`);
         limpiarFormulario();
         setEnviando(false);
         return;
@@ -200,19 +213,6 @@ function App() {
       alert("Error crítico al validar el RUT (Problema de conexión al Servidor Serverless).");
     } finally {
       setEnviando(false);
-    }
-  };
-
-  const getErrorText = () => {
-    switch (rutInvalido) {
-      case 'math':
-        return 'ERROR: Dígito Verificador incorrecto. RUT matemáticamente imposible.';
-      case 'duplicate':
-        return 'ERROR: Este RUT ya está registrado en la base de datos.';
-      case 'apify':
-        return 'ERROR: RUT válido, pero Apify no encontró a la persona en el registro público.';
-      default:
-        return 'RUT Inválido.';
     }
   };
 
