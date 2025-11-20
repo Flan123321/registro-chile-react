@@ -1,11 +1,11 @@
 // Este es el código del servidor que Vercel ejecutará
-// Se usa para ocultar el APIFY_TOKEN y realizar la consulta externa.
+// Se usa para OCULTAR el APIFY_TOKEN y realizar la consulta externa.
 
 import fetch from 'node-fetch';
 
-// Vercel carga este token automáticamente desde las Environment Variables
+// Vercel carga este token automáticamente desde la variable de entorno
 const APIFY_TOKEN = process.env.APIFY_TOKEN; 
-const ACTOR_ID = 'datacach/rutificador'; // ID del actor de Nombrerutyfirma
+const ACTOR_ID = 'datacach/rutificador';
 
 // Función de utilidad para esperar (polling)
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -16,13 +16,19 @@ export default async function rutificar(req, res) {
   }
 
   try {
-    const { rutLimpio } = req.body; // Recibimos el RUT sin formato (ej: 12345678K)
+    const { rutLimpio } = req.body;
     
-    if (!rutLimpio || !APIFY_TOKEN) {
-      return res.status(400).send({ error: 'RUT o token de Apify faltante.' });
+    // 1. Verificar Token (si el token no existe, enviamos error 401)
+    if (!APIFY_TOKEN) {
+      // Este error es visible en los logs de Vercel si la variable no está cargada
+      return res.status(401).json({ valido: false, mensaje: 'Error de configuración: APIFY_TOKEN faltante.' });
+    }
+    
+    if (!rutLimpio) {
+      return res.status(400).send({ valido: false, mensaje: 'RUT es requerido.' });
     }
 
-    // 1. Ejecutar el Actor de Apify
+    // 2. Ejecutar el Actor de Apify
     const runUrl = `https://api.apify.com/v2/acts/${ACTOR_ID}/run?token=${APIFY_TOKEN}`;
     const payload = {
       searchType: "Rut",
@@ -34,18 +40,20 @@ export default async function rutificar(req, res) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      // Añadimos timeout por si la API de Apify está lenta
+      timeout: 15000 
     });
 
     const runData = await runResponse.json();
     const runId = runData.data.id;
     
-    // 2. Polling: Esperar hasta que el Actor termine (máx. 60 segundos)
+    // 3. Polling: Esperar hasta que el Actor termine (máx. 60 segundos)
     let isFinished = false;
     let attempts = 0;
-    const maxAttempts = 20; // Revisa cada 3 segundos, máximo 20 veces (60s)
+    const maxAttempts = 20;
 
     while (!isFinished && attempts < maxAttempts) {
-      await sleep(3000); // Esperar 3 segundos
+      await sleep(3000); 
       attempts++;
 
       const statusUrl = `https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_TOKEN}`;
@@ -55,40 +63,37 @@ export default async function rutificar(req, res) {
       if (statusData.data.status === 'SUCCEEDED') {
         isFinished = true;
       } else if (statusData.data.status === 'FAILED') {
-        return res.status(500).json({ valido: false, error: 'Consulta Apify fallida.' });
+        return res.status(200).json({ valido: false, mensaje: 'Consulta Apify fallida.' });
       }
     }
 
     if (!isFinished) {
-        return res.status(504).json({ valido: false, error: 'Tiempo de espera excedido para Apify.' });
+        return res.status(200).json({ valido: false, mensaje: 'Tiempo de espera excedido. No se pudo verificar la existencia.' });
     }
 
-    // 3. Obtener el resultado final del dataset
+    // 4. Obtener el resultado final del dataset
     const datasetUrl = `https://api.apify.com/v2/actor-runs/${runId}/datasets/last/items?token=${APIFY_TOKEN}`;
     const datasetResponse = await fetch(datasetUrl);
     const results = await datasetResponse.json();
 
-    // 4. Analizar la respuesta de Apify
+    // 5. Analizar la respuesta de Apify
     const personaEncontrada = results.length > 0 && results[0].name && results[0].lastName;
 
     if (personaEncontrada) {
-      // Si Apify encuentra nombre y apellido, lo consideramos válido
       res.status(200).json({ 
         valido: true, 
-        nombreEncontrado: results[0].name,
-        apellidoEncontrado: results[0].lastName,
-        mensaje: 'RUT Validado con éxito.' 
+        mensaje: 'RUT Validado: Existe en el registro público.' 
       });
     } else {
-      // Apify no encontró una persona asociada al RUT
       res.status(200).json({ 
         valido: false, 
-        mensaje: 'RUT matemáticamente válido, pero no existe en el registro público.' 
+        mensaje: 'RUT no asociado a una persona en el registro público.' 
       });
     }
 
   } catch (error) {
-    console.error('Error al procesar la consulta de Apify:', error);
-    res.status(500).json({ valido: false, error: 'Error interno del servidor.' });
+    // Si hay un error general de conexión (timeout, DNS, node-fetch), caemos aquí
+    console.error('Error general del serverless function:', error.message);
+    res.status(500).json({ valido: false, mensaje: 'Error interno del servidor. Revisar logs de Vercel.' });
   }
 }
