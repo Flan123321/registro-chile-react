@@ -250,6 +250,7 @@ function App() {
           <p className="text-slate-500 mt-2">Cuadratura de Votos - Chile</p>
         </header>
 
+        {/* --- AVISO ACTUALIZADO --- */}
         <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-8 rounded-r shadow-sm">
           <div className="flex">
              <div className="flex-shrink-0">
@@ -258,15 +259,21 @@ function App() {
                </svg>
              </div>
              <div className="ml-3">
-               <h3 className="text-sm font-medium text-yellow-800">Aviso Importante (Máxima Seguridad)</h3>
+               <h3 className="text-sm font-medium text-yellow-800">Especificación Técnica: Auditoría Cívica</h3>
                <div className="mt-1 text-sm text-yellow-700">
                  <p>
-                   El sistema aplica 3 niveles de seguridad: 1) Validez Matemática (DV). 2) Antiduplicidad. 3) **Validación Externa (Apify) para confirmar existencia en registros públicos.**
+                   Este registro cuantifica la participación para verificar la cuadratura de votos en las actas electorales del Servel.
                  </p>
+                 <ul className="list-disc ml-5 mt-2 space-y-1">
+                    <li><span className="font-semibold">Filtro Nivel 1 (DV):</span> Chequeo criptográfico del Dígito Verificador del RUT.</li>
+                    <li><span className="font-semibold">Filtro Nivel 2 (Unicidad):</span> Prevención estricta de duplicidad de registros.</li>
+                    <li><span className="font-semibold">Filtro Nivel 3 (Trazabilidad):</span> Validación externa de existencia en el registro público.</li>
+                 </ul>
                </div>
              </div>
           </div>
         </div>
+        {/* --- FIN AVISO ACTUALIZADO --- */}
 
         {/* --- FORMULARIO DE INGRESO --- */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-10">
