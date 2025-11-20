@@ -81,13 +81,37 @@ const formatearRut = (rut) => {
     return `${cuerpo}-${dv}`;
 };
 
+// --- NUEVA FUNCIÓN: Enmascara el RUT (17.***.***-K) ---
+const maskRut = (fullRut) => {
+    if (!fullRut) return '';
+    const cleanedRut = fullRut.replace(/[^0-9kK]/g, ''); // 17456789K
+    const dv = cleanedRut.slice(-1); // K
+    const body = cleanedRut.slice(0, -1); // 17456789
+
+    // Tomamos los primeros dos dígitos (17) y el DV (K).
+    // El resto son asteriscos con el formato de puntos.
+    if (body.length < 2) return fullRut; // Si es muy corto, mostramos completo (error de ingreso)
+    
+    const start = body.substring(0, 2);
+    
+    return `${start}.***.***-${dv}`;
+};
+
+// --- NUEVA FUNCIÓN: Enmascara el Nombre (J. P. S.) ---
+const maskName = (name) => {
+    if (!name) return '';
+    const parts = name.trim().split(/\s+/); // Separa por espacios
+    // Devuelve la primera letra de cada parte, seguida de un punto.
+    return parts.map(part => `${part.charAt(0)}.` ).join(' ');
+};
+
 
 // --- 4. COMPONENTE PRINCIPAL ---
 function App() {
   const [registros, setRegistros] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [enviando, setEnviando] = useState(false);
-  const [rutInvalido, setRutInvalido] = useState(null); // null, 'math', 'duplicate', 'apify'
+  const [rutInvalido, setRutInvalido] = useState(null); 
 
   const [form, setForm] = useState({
     nombre: '',
@@ -168,7 +192,8 @@ function App() {
       return;
     }
     
-    // 2. Validación de Unicidad (Anti-Duplicidad)
+    // 2. Validación de Unicidad
+    // Comprueba duplicidad limpiando ambos RUTs de formato (lo que garantiza la seguridad)
     const rutExistente = registros.some(r => r.rut.replace(/[^0-9kK]/g, '').toUpperCase() === rutLimpio);
 
     if (rutExistente) {
@@ -184,13 +209,12 @@ function App() {
       const proxyResponse = await fetch('/api/rutificar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rutLimpio }), // Enviamos solo el RUT limpio al proxy
+        body: JSON.stringify({ rutLimpio }), 
       });
 
       const data = await proxyResponse.json();
 
       if (!data.valido) {
-        // Falló Apify o no encontró a la persona.
         setRutInvalido('apify');
         alert(`REGISTRO RECHAZADO: El RUT es válido, pero no se encontró en el registro público (${data.mensaje}).`);
         limpiarFormulario();
@@ -323,9 +347,9 @@ function App() {
                 <thead className="text-xs text-slate-700 uppercase bg-slate-200 border-b border-slate-300">
                   <tr>
                     <th className="px-6 py-4 font-extrabold border-r border-slate-300">Fecha</th>
-                    <th className="px-6 py-4 font-extrabold border-r border-slate-300">RUT</th>
-                    <th className="px-6 py-4 font-extrabold border-r border-slate-300">Apellidos</th>
-                    <th className="px-6 py-4 font-extrabold border-r border-slate-300">Nombres</th>
+                    <th className="px-6 py-4 font-extrabold border-r border-slate-300">RUT (Parcial)</th>
+                    <th className="px-6 py-4 font-extrabold border-r border-slate-300">Apellidos (Iniciales)</th>
+                    <th className="px-6 py-4 font-extrabold border-r border-slate-300">Nombres (Iniciales)</th>
                     <th className="px-6 py-4 font-extrabold border-r border-slate-300">Región</th>
                     <th className="px-6 py-4 font-extrabold">Comuna</th>
                   </tr>
@@ -341,9 +365,10 @@ function App() {
                     registros.map((item) => (
                       <tr key={item.id} className="border-b border-slate-200 hover:bg-blue-50 transition-colors">
                         <td className="px-6 py-3 border-r border-slate-200 font-mono text-xs text-slate-500">{item.fechaVisible}</td>
-                        <td className="px-6 py-3 border-r border-slate-200 font-mono font-bold text-slate-700">{item.rut}</td>
-                        <td className="px-6 py-3 border-r border-slate-200">{item.apellido}</td>
-                        <td className="px-6 py-3 border-r border-slate-200">{item.nombre}</td>
+                        {/* Se aplica enmascaramiento aquí */}
+                        <td className="px-6 py-3 border-r border-slate-200 font-mono font-bold text-slate-700">{maskRut(item.rut)}</td>
+                        <td className="px-6 py-3 border-r border-slate-200">{maskName(item.apellido)}</td>
+                        <td className="px-6 py-3 border-r border-slate-200">{maskName(item.nombre)}</td>
                         <td className="px-6 py-3 border-r border-slate-200">{item.region}</td>
                         <td className="px-6 py-3 font-medium text-indigo-900 bg-indigo-50/30">{item.comuna}</td>
                       </tr>
